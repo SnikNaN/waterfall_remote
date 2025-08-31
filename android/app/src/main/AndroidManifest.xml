@@ -5,8 +5,7 @@
 
     <application
         android:usesCleartextTraffic="true"
-        android:label="LED Ctrl"
-        android:theme="@style/Theme.Material3.DayNight">
+        android:label="LED Ctrl">
         <activity
             android:name=".MainActivity"
             android:exported="true">
