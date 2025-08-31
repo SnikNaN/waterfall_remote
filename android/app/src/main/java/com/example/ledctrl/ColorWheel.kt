@@ -1,77 +1,93 @@
-
 package com.example.ledctrl
 
-import android.graphics.Color.HSVToColor
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.*
-import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.unit.IntSize
-import kotlin.math.*
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
+import kotlin.math.atan2
+import kotlin.math.hypot
+import kotlin.math.min
 
 @Composable
 fun ColorWheel(
-    modifier: Modifier,
-    hue: Float,
-    sat: Float,
-    onChange: (h: Float, s: Float) -> Unit
+    modifier: Modifier = Modifier.size(240.dp),
+    wheelSize: Dp = 240.dp,
+    onColorChanged: (Color) -> Unit = {}
 ) {
-    var size by remember { mutableStateOf(IntSize.Zero) }
-    val radius get() = min(size.width, size.height) / 2f
-    val center get() = Offset(size.width / 2f, size.height / 2f)
+    var lastTouch by remember { mutableStateOf<Offset?>(null) }
 
     Canvas(
-        modifier = modifier.pointerInput(Unit) {
-            detectDragGestures(
-                onDragStart = { p -> onPointer(p, center, radius, onChange) },
-                onDrag = { change, _ -> onPointer(change.position, center, radius, onChange) }
-            )
-        }
-    ) {
-        size = IntSize(size.width, size.height)
-        drawIntoCanvas { canvas ->
-            val steps = 360
-            val sweep = 360f / steps
-            for (i in 0 until steps) {
-                val h = i.toFloat()
-                val path = Path().apply {
-                    arcTo(Rect(center = center, radius = radius), h, sweep, false)
-                    lineTo(center); close()
-                }
-                val cEdge = hsvToComposeColor(h, 1f)
-                val brush = Brush.radialGradient(
-                    colors = listOf(Color.White, cEdge),
-                    center = center,
-                    radius = radius
+        modifier = modifier
+            .size(wheelSize)
+            .pointerInput(Unit) {
+                detectDragGestures(
+                    onDragStart = { o ->
+                        lastTouch = o
+                        onColorChanged(pickColor(o, size.width, size.height))
+                    },
+                    onDrag = { change, _ ->
+                        lastTouch = change.position
+                        onColorChanged(pickColor(change.position, size.width, size.height))
+                    }
                 )
-                canvas.drawPath(path, Paint().apply { this.asFrameworkPaint().isAntiAlias = true; this.shader = brush })
             }
-        }
+    ) {
+        // геометрия круга
+        val center = Offset(size.width / 2f, size.height / 2f)
+        val radius = min(size.width, size.height) / 2f
 
-        val ang = Math.toRadians(hue.toDouble())
-        val r = sat * radius
-        val px = center.x + (cos(ang) * r).toFloat()
-        val py = center.y + (sin(ang) * r).toFloat()
-        drawCircle(color = Color.Black, radius = 8f, center = Offset(px, py))
-        drawCircle(color = Color.White, radius = 6f, center = Offset(px, py))
+        // круг оттенков (H)
+        drawCircle(
+            brush = Brush.sweepGradient(
+                listOf(
+                    Color.Red,
+                    Color.Magenta,
+                    Color.Blue,
+                    Color.Cyan,
+                    Color.Green,
+                    Color.Yellow,
+                    Color.Red
+                )
+            ),
+            center = center,
+            radius = radius
+        )
+
+        // радиальный градиент к белому в центре (S)
+        drawCircle(
+            brush = Brush.radialGradient(
+                colors = listOf(Color.White, Color.Transparent),
+                center = center,
+                radius = radius
+            ),
+            center = center,
+            radius = radius
+        )
     }
 }
 
-private fun onPointer(pos: Offset, center: Offset, radius: Float, onChange: (Float, Float) -> Unit) {
-    val dx = pos.x - center.x
-    val dy = pos.y - center.y
-    val ang = (Math.toDegrees(atan2(dy.toDouble(), dx.toDouble())) + 360.0) % 360.0
-    val dist = hypot(dx.toDouble(), dy.toDouble()).toFloat()
-    val s = (dist / radius).coerceIn(0f, 1f)
-    onChange(ang.toFloat(), s)
-}
+/** Возвращает цвет по позиции касания внутри круга. */
+private fun pickColor(pos: Offset, w: Float, h: Float): Color {
+    val cx = w / 2f
+    val cy = h / 2f
+    val dx = pos.x - cx
+    val dy = pos.y - cy
+    val radius = min(w, h) / 2f
 
-private fun hsvToComposeColor(h: Float, s: Float): Color {
-    val arr = floatArrayOf(h, s, 1f)
-    val c = HSVToColor(arr)
-    return Color(c)
+    val distance = hypot(dx, dy)
+    val sat = (distance / radius).coerceIn(0f, 1f)
+
+    // угол в градусах [0..360)
+    val angle = Math.toDegrees(atan2(dy, dx).toDouble()).toFloat()
+    val hue = ((angle + 360f) % 360f)
+
+    val value = 1f
+    return Color.hsv(hue, sat, value)
 }
