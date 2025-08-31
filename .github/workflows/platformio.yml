@@ -1,0 +1,71 @@
+
+name: Firmware (PlatformIO)
+
+on:
+  push:
+    paths:
+      - 'firmware/**'
+  workflow_dispatch:
+    inputs:
+      upload_method:
+        description: 'none | http | ota'
+        required: false
+        default: 'none'
+      device_host:
+        description: 'IP or hostname (e.g., led.local)'
+        required: false
+        default: 'led.local'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install PlatformIO
+        run: pip install platformio
+
+      - name: Build firmware (bin)
+        working-directory: firmware
+        run: pio run -e ota
+
+      - name: Export compiled bin
+        id: findbin
+        shell: bash
+        run: |
+          BIN=$(find .pio/build/ota -name "*.bin" | head -n1)
+          echo "BIN=$BIN" >> $GITHUB_OUTPUT
+        working-directory: firmware
+
+      - name: Upload artifact (firmware .bin)
+        uses: actions/upload-artifact@v4
+        with:
+          name: firmware-bin
+          path: ${{ steps.findbin.outputs.BIN }}
+
+      - name: HTTP upload via /update
+        if: ${{ inputs.upload_method == 'http' }}
+        env:
+          HOST: ${{ inputs.device_host }}
+          USER: ${{ secrets.OTA_HTTP_USER }}
+          PASS: ${{ secrets.OTA_HTTP_PASS }}
+        run: |
+          BIN="${{ steps.findbin.outputs.BIN }}"
+          test -f "$BIN"
+          curl -u "$USER:$PASS" -F "image=@${BIN}" "http://${HOST}/update" --fail
+
+      - name: ArduinoOTA upload (espota)
+        if: ${{ inputs.upload_method == 'ota' }}
+        env:
+          HOST: ${{ inputs.device_host }}
+          AUTH: ${{ secrets.ARDUINO_OTA_AUTH }}
+        working-directory: firmware
+        run: |
+          BIN="${{ steps.findbin.outputs.BIN }}"
+          test -f "$BIN"
+          python -m platformio run -e ota -t upload --upload-port "${HOST}" ${AUTH:+--upload-flag --auth=${AUTH}}
